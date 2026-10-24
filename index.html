@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Art Clock">
+<meta name="theme-color" content="#0b0b0c">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<title>Art Clock</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0b0b0c; color: #f2efe9;
+    font-family: -apple-system, "Hiragino Sans", "Helvetica Neue", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  }
+  #stage { position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
+  .art {
+    position: absolute; top: 3vmin; left: 3vmin; right: 3vmin; bottom: 3vmin;
+    width: calc(100% - 6vmin); height: calc(100% - 6vmin);
+    object-fit: contain; opacity: 0;
+    transition: opacity 2.5s ease;
+    will-change: opacity;
+  }
+  .art.show { opacity: 1; }
+  body.fill .art { top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; object-fit: cover; }
+
+  /* 下部のグラデーション（文字の可読性用） */
+  #shade {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 32vh; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.55));
+  }
+  body.no-overlay #shade { display: none; }
+
+  #clock {
+    position: fixed; bottom: 4vmin; right: 4.5vmin; text-align: right;
+    text-shadow: 0 1px 12px rgba(0,0,0,.6);
+    transition: transform 2s ease;
+    pointer-events: none;
+  }
+  #time { font-weight: 200; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  #date { font-weight: 400; opacity: .85; margin-top: .6vmin; letter-spacing: .04em; }
+  body.clock-L #time { font-size: 17vmin; } body.clock-L #date { font-size: 3.2vmin; }
+  body.clock-M #time { font-size: 11vmin; } body.clock-M #date { font-size: 2.6vmin; }
+  body.clock-S #time { font-size: 6.5vmin; } body.clock-S #date { font-size: 2.1vmin; }
+  body.clock-off #clock { display: none; }
+  body.pos-left #clock { right: auto; left: 4.5vmin; text-align: left; }
+  body.pos-center #clock { right: 0; left: 0; text-align: center; }
+  body.pos-left #caption { left: auto; right: 4.5vmin; text-align: right; }
+  body.pos-center #caption { display: none; }
+
+  #caption {
+    position: fixed; left: 4.5vmin; bottom: 4.2vmin; max-width: 46vw;
+    font-size: 1.9vmin; line-height: 1.45; opacity: .78;
+    text-shadow: 0 1px 8px rgba(0,0,0,.7); pointer-events: none;
+    transition: opacity 2.5s ease;
+  }
+  #caption .t { font-style: italic; font-size: 2.2vmin; }
+  #caption .m { opacity: .7; font-size: 1.6vmin; margin-top: .3vmin; }
+  body.no-caption #caption { display: none; }
+
+  /* 夜間 */
+  #night {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000;
+    opacity: 0; pointer-events: none; transition: opacity 3s ease;
+  }
+  body.night-dim #night { opacity: .78; }
+  body.night-clock #night { opacity: 1; }
+  body.night-dim #clock, body.night-clock #clock { z-index: 5; opacity: .55; }
+  body.night-clock #caption, body.night-dim #caption { opacity: 0; }
+
+  #status {
+    position: fixed; top: 50%; left: 0; right: 0; text-align: center;
+    transform: translateY(-50%); font-size: 2.4vmin; opacity: .6;
+  }
+
+  /* 設定パネル */
+  #panel {
+    position: fixed; top: 3vmin; left: 50%; transform: translateX(-50%) translateY(-8px);
+    width: min(640px, 92vw); max-height: 88vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: rgba(24,24,26,.92); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 16px; padding: 18px 20px 14px; box-sizing: border-box;
+    opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease;
+    z-index: 10; font-size: 15px;
+  }
+  #panel.open { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+  .row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .row:last-of-type { border-bottom: 0; }
+  .row label { opacity: .8; margin-right: 12px; white-space: nowrap; }
+  .seg { display: flex; flex-wrap: wrap; justify-content: flex-end; }
+  .seg button {
+    background: rgba(255,255,255,.07); color: #f2efe9; border: 0; margin: 2px 0 2px 4px;
+    padding: 7px 11px; border-radius: 8px; font-size: 14px; font-family: inherit;
+  }
+  .seg button.on { background: #f2efe9; color: #111; }
+  .actions { display: flex; justify-content: space-between; margin-top: 12px; }
+  .actions button {
+    flex: 1; margin: 0 4px; padding: 11px; border-radius: 10px; border: 0;
+    background: rgba(255,255,255,.12); color: #f2efe9; font-size: 15px; font-family: inherit;
+  }
+  .actions button.primary { background: #f2efe9; color: #111; }
+  #info { font-size: 12px; opacity: .5; margin-top: 10px; line-height: 1.5; }
+  #info a { color: inherit; }
+</style>
+</head>
+<body class="clock-M pos-right">
+<div id="stage">
+  <img class="art" id="imgA" alt="">
+  <img class="art" id="imgB" alt="">
+</div>
+<div id="shade"></div>
+<div id="night"></div>
+<div id="caption"></div>
+<div id="clock"><div id="time">--:--</div><div id="date"></div></div>
+<div id="status">作品を読み込み中…</div>
+
+<div id="panel">
+  <div class="row"><label>切替間隔</label><div class="seg" data-key="interval">
+    <button data-v="1">1分</button><button data-v="5">5分</button><button data-v="15">15分</button><button data-v="30">30分</button><button data-v="60">1時間</button></div></div>
+  <div class="row"><label>作品</label><div class="seg" data-key="source">
+    <button data-v="both">両方</button><button data-v="aic">シカゴ美術館</button><button data-v="met">メトロポリタン</button></div></div>
+  <div class="row"><label>メトの内容</label><div class="seg" data-key="metSet">
+    <button data-v="mix">西洋＋浮世絵</button><button data-v="west">西洋絵画</button><button data-v="ukiyoe">浮世絵</button></div></div>
+  <div class="row"><label>メトの画質</label><div class="seg" data-key="metQuality">
+    <button data-v="hi">高画質</button><button data-v="lite">軽量</button></div></div>
+  <div class="row"><label>名作に絞る</label><div class="seg" data-key="famous">
+    <button data-v="1">オン</button><button data-v="0">オフ</button></div></div>
+  <div class="row"><label>画面の向きに合わせる</label><div class="seg" data-key="orient">
+    <button data-v="1">オン</button><button data-v="0">オフ</button></div></div>
+  <div class="row"><label>表示</label><div class="seg" data-key="fit">
+    <button data-v="contain">全体</button><button data-v="fill">画面いっぱい</button></div></div>
+  <div class="row"><label>時計</label><div class="seg" data-key="clock">
+    <button data-v="L">大</button><button data-v="M">中</button><button data-v="S">小</button><button data-v="off">なし</button></div></div>
+  <div class="row"><label>時計の位置</label><div class="seg" data-key="pos">
+    <button data-v="right">右下</button><button data-v="left">左下</button><button data-v="center">中央下</button></div></div>
+  <div class="row"><label>秒を表示</label><div class="seg" data-key="seconds">
+    <button data-v="1">オン</button><button data-v="0">オフ</button></div></div>
+  <div class="row"><label>作品名</label><div class="seg" data-key="caption">
+    <button data-v="1">表示</button><button data-v="0">非表示</button></div></div>
+  <div class="row"><label>夜間（23時〜6時）</label><div class="seg" data-key="night">
+    <button data-v="dim">暗くする</button><button data-v="clock">時計のみ</button><button data-v="off">そのまま</button></div></div>
+  <div class="row"><label>夜間の開始</label><div class="seg" data-key="nightStart">
+    <button data-v="21">21時</button><button data-v="22">22時</button><button data-v="23">23時</button><button data-v="0">0時</button></div></div>
+  <div class="row"><label>夜間の終了</label><div class="seg" data-key="nightEnd">
+    <button data-v="5">5時</button><button data-v="6">6時</button><button data-v="7">7時</button><button data-v="8">8時</button></div></div>
+  <div class="actions">
+    <button id="btnNext" class="primary">次の作品</button>
+    <button id="btnReload">再読み込み</button>
+    <button id="btnClose">閉じる</button>
+  </div>
+  <div id="info"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- 設定 ----------
+  var DEFAULTS = {
+    interval: '5', source: 'both', metSet: 'mix', metQuality: 'hi', famous: '1', orient: '1', fit: 'contain',
+    clock: 'M', pos: 'right', seconds: '0', caption: '1',
+    night: 'dim', nightStart: '23', nightEnd: '6'
+  };
+  var KEY = 'artclock.v1';
+  var cfg = {};
+  function loadCfg() {
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+    for (var k in DEFAULTS) cfg[k] = (saved[k] !== undefined) ? String(saved[k]) : DEFAULTS[k];
+  }
+  function saveCfg() { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {} }
+
+  // 最近表示した作品（重複回避）
+  var HKEY = 'artclock.history';
+  var history = [];
+  try { history = JSON.parse(localStorage.getItem(HKEY) || '[]') || []; } catch (e) {}
+  function remember(id) {
+    history.push(id);
+    if (history.length > 300) history = history.slice(-300);
+    try { localStorage.setItem(HKEY, JSON.stringify(history)); } catch (e) {}
+  }
+  function seen(id) { return history.indexOf(id) !== -1; }
+
+  // ---------- ユーティリティ ----------
+  function $(id) { return document.getElementById(id); }
+  function rand(n) { return Math.floor(Math.random() * n); }
+  function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = rand(i + 1); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function fetchJSON(url, ms) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, ms || 20000);
+    return fetch(url, ctrl ? { signal: ctrl.signal } : {}).then(function (r) {
+      clearTimeout(timer);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }, function (e) { clearTimeout(timer); throw e; });
+  }
+  function landscape() { return window.innerWidth >= window.innerHeight; }
+  function orientOK(w, h) {
+    if (cfg.orient !== '1' || !w || !h) return true;
+    var r = w / h;
+    return landscape() ? r >= 0.95 : r <= 1.05;
+  }
+
+  // ---------- 作品ソース: シカゴ美術館 ----------
+  var AIC = {
+    pool: [], loading: null, iiif: 'https://www.artic.edu/iiif/2', totalPages: null,
+    query: function (page) {
+      var must = [
+        { term: { is_public_domain: true } },
+        { term: { 'artwork_type_title.keyword': 'Painting' } },
+        { exists: { field: 'image_id' } }
+      ];
+      if (cfg.famous === '1') must.push({ term: { is_boosted: true } });
+      var params = {
+        query: { bool: { must: must } },
+        fields: ['id', 'title', 'artist_title', 'artist_display', 'date_display', 'image_id', 'thumbnail'],
+        limit: 100, page: page
+      };
+      return 'https://api.artic.edu/api/v1/artworks/search?params=' + encodeURIComponent(JSON.stringify(params));
+    },
+    refill: function () {
+      var self = this;
+      if (self.loading) return self.loading;
+      var page = self.totalPages ? 1 + rand(Math.min(self.totalPages, 10)) : 1;
+      self.loading = fetchJSON(self.query(page)).then(function (j) {
+        if (j.config && j.config.iiif_url) self.iiif = j.config.iiif_url;
+        if (j.pagination) self.totalPages = j.pagination.total_pages;
+        var items = (j.data || []).filter(function (d) { return d.image_id; }).map(function (d) {
+          var th = d.thumbnail || {};
+          var artist = d.artist_title || (d.artist_display || '').split('\n')[0];
+          return {
+            id: 'aic:' + d.id, title: d.title, artist: artist, date: d.date_display,
+            w: th.width, h: th.height, museum: 'Art Institute of Chicago',
+            urls: [self.iiif + '/' + d.image_id + '/full/1686,/0/default.jpg',
+                   self.iiif + '/' + d.image_id + '/full/843,/0/default.jpg']
+          };
+        });
+        // 初回が1ページ目だけだと偏るので、ページ数が分かったら次回はランダムページ
+        self.pool = self.pool.concat(shuffle(items));
+        self.loading = null;
+      }, function (e) { self.loading = null; throw e; });
+      return self.loading;
+    },
+    next: function () {
+      var self = this;
+      function pick() {
+        for (var pass = 0; pass < 2; pass++) {
+          for (var i = 0; i < self.pool.length; i++) {
+            var it = self.pool[i];
+            if (seen(it.id) && pass === 0) continue;
+            if (!orientOK(it.w, it.h) && pass === 0) continue;
+            self.pool.splice(i, 1);
+            return it;
+          }
+        }
+        return null;
+      }
+      var it = self.pool.length > 15 ? pick() : null;
+      if (it) return Promise.resolve(it);
+      return self.refill().then(function () {
+        var x = pick();
+        if (!x) throw new Error('AIC: 作品が見つかりません');
+        return x;
+      });
+    },
+    reset: function () { this.pool = []; this.totalPages = null; }
+  };
+
+  // ---------- 作品ソース: メトロポリタン美術館 ----------
+  // 検索APIは 2026-10 に v1.1（offset/limit のページング）へ移行済み
+  var MET = {
+    ids: [], loading: null, totals: {},
+    base: 'https://collectionapi.metmuseum.org/public/collection/v1',
+    searches: function () {
+      var s = this.base + '.1/search?hasImages=true';
+      var h = cfg.famous === '1' ? '&isHighlight=true' : '';
+      var west = [s + '&departmentId=11' + h + '&q=painting'];
+      var uki = [s + '&departmentId=6&q=Hokusai', s + '&departmentId=6&q=Hiroshige', s + '&departmentId=6&q=Utamaro'];
+      if (cfg.metSet === 'west') return west;
+      if (cfg.metSet === 'ukiyoe') return uki;
+      return west.concat(uki);
+    },
+    refill: function () {
+      var self = this;
+      if (self.loading) return self.loading;
+      var urls = self.searches();
+      var url = urls[rand(urls.length)];
+      var LIMIT = 60;
+      var total = self.totals[url];
+      var offset = total ? rand(Math.max(1, total - LIMIT + 1)) : 0;
+      self.loading = fetchJSON(url + '&limit=' + LIMIT + '&offset=' + offset).then(function (j) {
+        if (j.total) self.totals[url] = j.total;
+        var ids = shuffle((j.objectIDs || []).slice());
+        self.ids = self.ids.concat(ids.filter(function (id) { return !seen('met:' + id); }));
+        if (!self.ids.length) self.ids = ids; // 全部見ていたら重複を許可
+        self.loading = null;
+      }, function (e) { self.loading = null; throw e; });
+      return self.loading;
+    },
+    next: function (tries) {
+      var self = this;
+      tries = tries || 0;
+      if (tries > 12) return Promise.reject(new Error('Met: 表示できる作品が見つかりません'));
+      var ready = self.ids.length ? Promise.resolve() : self.refill();
+      return ready.then(function () {
+        var id = self.ids.shift();
+        if (id === undefined) throw new Error('Met: 作品がありません');
+        return fetchJSON(self.base + '/objects/' + id).then(function (o) {
+          if (!o.isPublicDomain || !(o.primaryImage || o.primaryImageSmall)) return self.next(tries + 1);
+          // 高画質=原寸（長辺4000px程度）、軽量=web-large（長辺600px程度）
+          var urls = cfg.metQuality === 'hi' ? [o.primaryImage, o.primaryImageSmall] : [o.primaryImageSmall, o.primaryImage];
+          return {
+            id: 'met:' + id, title: o.title || '', artist: o.artistDisplayName || o.culture || '',
+            date: o.objectDate, w: 0, h: 0, museum: 'The Metropolitan Museum of Art',
+            urls: urls.filter(Boolean)
+          };
+        }, function () { return self.next(tries + 1); });
+      });
+    },
+    reset: function () { this.ids = []; }
+  };
+
+  // 失敗したソースは30分休ませる（片方が落ちていても、もう片方で表示を続ける）
+  function nextArtwork() {
+    var s = cfg.source;
+    var now = Date.now();
+    var src;
+    if (s === 'aic') src = AIC;
+    else if (s === 'met') src = MET;
+    else {
+      var aOK = !(AIC.downUntil > now), mOK = !(MET.downUntil > now);
+      src = (aOK && mOK) ? (Math.random() < 0.5 ? AIC : MET) : aOK ? AIC : mOK ? MET : (Math.random() < 0.5 ? AIC : MET);
+    }
+    var other = src === AIC ? MET : AIC;
+    return src.next().then(function (a) { src.downUntil = 0; return a; }, function (e) {
+      src.downUntil = Date.now() + 30 * 60000;
+      if (s === 'both') return other.next();
+      throw e;
+    });
+  }
+
+  // ---------- 画像の読み込みと切替 ----------
+  var imgs = [$('imgA'), $('imgB')];
+  var front = 0;
+  var current = null;
+  var busy = false;
+  var timer = null;
+  var failCount = 0;
+
+  function loadImage(urls) {
+    return new Promise(function (resolve, reject) {
+      var i = 0;
+      function tryNext() {
+        if (i >= urls.length) { reject(new Error('画像の読み込みに失敗')); return; }
+        var url = urls[i++];
+        var im = new Image();
+        var to = setTimeout(function () { im.onload = im.onerror = null; im.src = ''; tryNext(); }, 40000);
+        im.onload = function () {
+          clearTimeout(to);
+          var done = function () { resolve({ url: url, w: im.naturalWidth, h: im.naturalHeight }); };
+          if (im.decode) im.decode().then(done, done); else done();
+        };
+        im.onerror = function () { clearTimeout(to); tryNext(); };
+        im.src = url;
+      }
+      tryNext();
+    });
+  }
+
+  function setCaption(a) {
+    var c = $('caption');
+    function esc(s) { return String(s || '').replace(/[&<>"]/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]; }); }
+    c.innerHTML = '<div class="t">' + esc(a.title) + '</div>' +
+      '<div>' + esc(a.artist) + (a.date ? '、' + esc(a.date) : '') + '</div>' +
+      '<div class="m">' + esc(a.museum) + '</div>';
+  }
+
+  function show(tries) {
+    if (busy) return;
+    busy = true;
+    tries = tries || 0;
+    nextArtwork().then(function (a) {
+      return loadImage(a.urls).then(function (res) {
+        // Metは寸法が事前に分からないので、読み込み後に向きを確認（数回まで）
+        if (a.museum.indexOf('Metropolitan') !== -1 && !orientOK(res.w, res.h) && tries < 4) {
+          remember(a.id);
+          busy = false; show(tries + 1); return;
+        }
+        var back = 1 - front;
+        var el = imgs[back];
+        el.onload = function () {
+          el.onload = null;
+          // 次のフレームでフェード
+          requestAnimationFrame(function () {
+            el.classList.add('show');
+            imgs[front].classList.remove('show');
+            var old = imgs[front];
+            setTimeout(function () { if (!old.classList.contains('show')) old.removeAttribute('src'); }, 3000);
+            front = back;
+          });
+        };
+        el.src = res.url;
+        current = a;
+        remember(a.id);
+        setCaption(a);
+        $('status').style.display = 'none';
+        failCount = 0;
+        busy = false;
+        schedule();
+      });
+    }).catch(function (e) {
+      busy = false;
+      failCount++;
+      if (!current) {
+        $('status').textContent = '読み込みに失敗しました（' + (e && e.message ? e.message : e) + '）。自動で再試行します…';
+      }
+      // 失敗時は間隔をあけて再試行（最大5分）
+      clearTimeout(timer);
+      timer = setTimeout(function () { show(); }, Math.min(300000, 15000 * failCount));
+    });
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    var ms = parseInt(cfg.interval, 10) * 60000;
+    timer = setTimeout(function () {
+      // 夜間の「時計のみ」中は通信しない
+      if (document.body.classList.contains('night-clock')) { schedule(); return; }
+      show();
+    }, ms);
+  }
+
+  // ---------- 時計 ----------
+  var WD = ['日', '月', '火', '水', '木', '金', '土'];
+  var bootAt = Date.now();
+  var lastShift = -1;
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function inNight(h) {
+    var s = parseInt(cfg.nightStart, 10), e = parseInt(cfg.nightEnd, 10);
+    return s <= e ? (h >= s && h < e) : (h >= s || h < e);
+  }
+  function tick() {
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    $('time').textContent = h + ':' + pad(m) + (cfg.seconds === '1' ? ':' + pad(d.getSeconds()) : '');
+    $('date').textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日（' + WD[d.getDay()] + '）';
+
+    var b = document.body.classList;
+    var night = cfg.night !== 'off' && inNight(h);
+    b.toggle('night-dim', night && cfg.night === 'dim');
+    b.toggle('night-clock', night && cfg.night === 'clock');
+
+    // 焼き付き防止に10分ごとに時計を数px動かす
+    var slot = Math.floor(m / 10);
+    if (slot !== lastShift) {
+      lastShift = slot;
+      $('clock').style.transform = 'translate(' + (rand(13) - 6) + 'px,' + (rand(9) - 4) + 'px)';
+    }
+
+    // 長時間稼働でのメモリ肥大を避けるため、毎日4:00に再読み込み（起動から1時間以上経っていれば）
+    if (h === 4 && m === 0 && Date.now() - bootAt > 3600000) location.reload();
+
+    setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+  }
+
+  // ---------- 見た目の反映 ----------
+  function applyLook() {
+    var b = document.body;
+    var keep = [];
+    for (var i = 0; i < b.classList.length; i++) {
+      var c = b.classList[i];
+      if (/^night-/.test(c)) keep.push(c);
+    }
+    b.className = keep.join(' ');
+    b.classList.add('clock-' + cfg.clock);
+    b.classList.add('pos-' + cfg.pos);
+    if (cfg.caption !== '1') b.classList.add('no-caption');
+    if (cfg.fit === 'fill') b.classList.add('fill');
+    if (cfg.caption !== '1' && cfg.clock === 'off') b.classList.add('no-overlay');
+    var segs = document.querySelectorAll('.seg');
+    for (var s = 0; s < segs.length; s++) {
+      var key = segs[s].getAttribute('data-key');
+      var btns = segs[s].querySelectorAll('button');
+      for (var j = 0; j < btns.length; j++) btns[j].classList.toggle('on', btns[j].getAttribute('data-v') === cfg[key]);
+    }
+  }
+
+  // ---------- 設定パネル ----------
+  var panel = $('panel');
+  var hideTimer = null;
+  function openPanel() {
+    panel.classList.add('open');
+    var a = current;
+    $('info').innerHTML = (a ? '表示中: ' + a.museum + '<br>' : '') +
+      'パブリックドメインの作品を各美術館の公開APIから取得しています。';
+    armHide();
+  }
+  function closePanel() { panel.classList.remove('open'); clearTimeout(hideTimer); }
+  function armHide() { clearTimeout(hideTimer); hideTimer = setTimeout(closePanel, 20000); }
+
+  document.addEventListener('click', function (ev) {
+    if (panel.contains(ev.target)) {
+      armHide();
+      var btn = ev.target.closest ? ev.target.closest('button') : null;
+      if (!btn) return;
+      var seg = btn.parentNode;
+      var key = seg.getAttribute && seg.getAttribute('data-key');
+      if (key) {
+        var before = cfg[key];
+        cfg[key] = btn.getAttribute('data-v');
+        saveCfg(); applyLook();
+        if (before !== cfg[key]) {
+          if (key === 'interval') schedule();
+          if (key === 'famous' || key === 'source' || key === 'metSet' || key === 'orient' || key === 'metQuality') {
+            AIC.reset(); MET.reset(); show();
+          }
+          if (key === 'night' || key === 'nightStart' || key === 'nightEnd') { /* tickで反映 */ }
+        }
+      }
+      return;
+    }
+    if (panel.classList.contains('open')) closePanel(); else openPanel();
+  }, false);
+
+  $('btnNext').addEventListener('click', function (e) { e.stopPropagation(); show(); armHide(); });
+  $('btnReload').addEventListener('click', function (e) { e.stopPropagation(); location.reload(); });
+  $('btnClose').addEventListener('click', function (e) { e.stopPropagation(); closePanel(); });
+
+  // 画面回転時は次の作品から向きを考慮（すぐ切り替えたい場合は「次の作品」）
+  window.addEventListener('orientationchange', function () { setTimeout(applyLook, 300); });
+
+  // 復帰時（スリープ明けなど）に切替が止まっていたら再開
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && !busy) schedule();
+  });
+
+  // ---------- 起動 ----------
+  loadCfg();
+  applyLook();
+  tick();
+  show();
+})();
+</script>
+</body>
+</html>
